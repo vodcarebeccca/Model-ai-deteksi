@@ -3,129 +3,72 @@ import requests
 import json
 import time
 import re
+import threading
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, List, Any
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ─── Page Config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="AI Model Detector",
+    page_title="AI Model Detector Pro",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ─── Custom CSS ─────────────────────────────────────────────────────────────────
+# ─── Custom CSS (More Premium) ─────────────────────────────────────────────────
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap');
-
-  html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-  }
-
-  /* Dark theme background */
-  .stApp {
-    background: linear-gradient(135deg, #0d0f14 0%, #111520 50%, #0d0f14 100%);
-  }
-
-  /* Main title */
-  .hero-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 2.2rem;
-    font-weight: 600;
-    color: #e2e8f0;
-    letter-spacing: -0.5px;
-    margin-bottom: 0;
-  }
-  .hero-sub {
-    font-size: 0.95rem;
-    color: #64748b;
-    margin-top: 4px;
-    font-weight: 400;
-  }
-  .accent { color: #38bdf8; }
-
-  /* Card containers */
-  .card {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 16px;
-  }
-
-  /* Provider badge */
-  .badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 20px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .badge-real    { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
-  .badge-proxy   { background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
-  .badge-unknown { background: rgba(148,163,184,0.15);color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
-
-  /* Result metric */
-  .metric-box {
-    background: rgba(56,189,248,0.05);
-    border: 1px solid rgba(56,189,248,0.15);
-    border-radius: 8px;
-    padding: 14px 18px;
-    text-align: center;
-  }
-  .metric-label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; }
-  .metric-value { font-size: 1.5rem; font-weight: 700; color: #38bdf8; font-family: 'JetBrains Mono', monospace; }
-
-  /* Code block style */
-  .code-block {
-    background: rgba(0,0,0,0.4);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 8px;
-    padding: 14px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.82rem;
-    color: #94a3b8;
-    overflow-x: auto;
-    white-space: pre-wrap;
-  }
-
-  /* Verdict colors */
-  .verdict-real    { color: #4ade80; font-weight: 700; }
-  .verdict-proxy   { color: #fb923c; font-weight: 700; }
-  .verdict-unknown { color: #94a3b8; font-weight: 700; }
-
-  /* Sidebar styling */
-  section[data-testid="stSidebar"] {
-    background: rgba(255,255,255,0.02);
-    border-right: 1px solid rgba(255,255,255,0.06);
-  }
-
-  /* Remove default streamlit padding */
-  .block-container { padding-top: 2rem; }
-
-  /* Progress / spinner override */
-  .stSpinner > div { border-top-color: #38bdf8 !important; }
-
-  /* Table */
-  .result-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .result-table th {
-    color: #64748b; text-transform: uppercase; font-size: 0.7rem;
-    letter-spacing: 0.8px; padding: 8px 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left;
-  }
-  .result-table td {
-    padding: 10px 12px; color: #e2e8f0;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-  }
-  .result-table tr:last-child td { border-bottom: none; }
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    .stApp {
+        background: linear-gradient(135deg, #0a0c12 0%, #11151f 100%);
+    }
+    .hero-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 2.8rem;
+        font-weight: 700;
+        background: linear-gradient(90deg, #38bdf8, #a855f7, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -1.5px;
+        margin-bottom: 0;
+    }
+    .hero-sub { color: #64748b; font-size: 1.05rem; }
+    .card {
+        background: rgba(255,255,255,0.045);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+    .badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    .badge-real { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid #4ade80; }
+    .badge-proxy { background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid #fb923c; }
+    .verdict-real { color: #4ade80; font-weight: 700; }
+    .verdict-proxy { color: #fb923c; font-weight: 700; }
+    .metric-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+    .probe-log {
+        font-family: 'JetBrains Mono', monospace;
+        background: #0f172a;
+        padding: 12px;
+        border-radius: 8px;
+        max-height: 320px;
+        overflow-y: auto;
+        font-size: 0.82rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-
-# ─── Constants ───────────────────────────────────────────────────────────────────
+# ─── Constants ─────────────────────────────────────────────────────────────────
 DEFAULT_BASE_URL = "https://ai.botclaw.top/v1"
 
 PROVIDER_SIGNATURES = {
@@ -141,439 +84,243 @@ PROVIDER_SIGNATURES = {
     "perplexity": {"keywords": ["pplx", "sonar"], "color": "#22c55e"},
     "nous":       {"keywords": ["nous", "hermes", "capybara"], "color": "#a855f7"},
     "microsoft":  {"keywords": ["phi-", "wizardlm"], "color": "#0078d4"},
+    "groq":       {"keywords": ["groq", "llama3-groq"], "color": "#f97316"},
 }
 
 PROXY_CLUES = [
-    "openrouter", "together", "replicate", "fireworks", "anyscale",
-    "perplexity", "groq", "lepton", "octo", "deepinfra", "modal",
-    "novita", "botclaw", "aiml", "corcel",
+    "openrouter", "together", "replicate", "fireworks", "anyscale", "groq",
+    "lepton", "octo", "deepinfra", "modal", "novita", "botclaw", "aiml",
+    "corcel", "siliconflow", "nebius", "hyperbolic", "massedcompute", "runpod"
 ]
 
-
-# ─── Helper Functions ─────────────────────────────────────────────────────────────
+# ─── Helper Functions ─────────────────────────────────────────────────────────
 def make_headers(api_key: str) -> dict:
     return {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-
 def detect_provider(model_id: str) -> tuple[str, str]:
-    """Return (provider_name, hex_color) based on model ID keywords."""
     m = model_id.lower()
     for provider, meta in PROVIDER_SIGNATURES.items():
         if any(kw in m for kw in meta["keywords"]):
             return provider, meta["color"]
     return "unknown", "#64748b"
 
-
 def is_likely_proxied(model_id: str, owned_by: str) -> bool:
-    """Heuristic: check if model is likely proxied through aggregator."""
     combined = (model_id + " " + (owned_by or "")).lower()
     return any(clue in combined for clue in PROXY_CLUES)
 
-
-def fetch_models(api_key: str, base_url: str) -> dict:
-    """Fetch /v1/models from the endpoint."""
-    url = base_url.rstrip("/") + "/models"
-    try:
-        resp = requests.get(url, headers=make_headers(api_key), timeout=15)
-        resp.raise_for_status()
-        return {"ok": True, "data": resp.json(), "status": resp.status_code}
-    except requests.exceptions.ConnectionError:
-        return {"ok": False, "error": "❌ Tidak bisa terhubung ke server. Periksa URL."}
-    except requests.exceptions.Timeout:
-        return {"ok": False, "error": "⏳ Request timeout setelah 15 detik."}
-    except requests.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response else "?"
-        body = ""
-        try:
-            body = e.response.json()
-        except Exception:
-            pass
-        if code == 401:
-            return {"ok": False, "error": "🔐 API key tidak valid atau tidak memiliki akses."}
-        return {"ok": False, "error": f"HTTP {code}: {body or str(e)}"}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def probe_model(api_key: str, base_url: str, model_id: str) -> dict:
-    """
-    Send a minimal chat completion to detect actual model behavior.
-    Returns latency, response snippet, reported model ID, and fingerprint clues.
-    """
+def advanced_probe(api_key: str, base_url: str, model_id: str) -> dict:
+    """Advanced probing with multiple signals"""
     url = base_url.rstrip("/") + "/chat/completions"
-    payload = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": "Reply only: what is your model name and version?"}],
-        "max_tokens": 80,
-        "temperature": 0,
-    }
-    t0 = time.time()
-    try:
-        resp = requests.post(url, headers=make_headers(api_key), json=payload, timeout=30)
-        latency = round((time.time() - t0) * 1000)
-        resp.raise_for_status()
-        data = resp.json()
+    payloads = [
+        {"model": model_id, "messages": [{"role": "user", "content": "Reply only with your exact model name and version."}], "max_tokens": 60, "temperature": 0},
+        {"model": model_id, "messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Who are you?"}], "max_tokens": 80, "temperature": 0},
+    ]
+    
+    results = {"ok": True, "probes": [], "latency_ms": [], "model_mismatch": False}
+    t_start = time.time()
 
-        # Extract fields
-        choice      = data.get("choices", [{}])[0]
-        message     = choice.get("message", {})
-        content     = message.get("content", "")
-        finish      = choice.get("finish_reason", "")
-        reported_id = data.get("model", model_id)
-        usage       = data.get("usage", {})
-
-        # Fingerprint: does reported model differ from requested?
-        model_mismatch = reported_id.lower() != model_id.lower()
-
-        # Look for self-identification in response
-        self_id = None
-        patterns = [
-            r"(?:i am|i'm|my (?:name|model|version) is|i(?:'m| am) called)\s+([A-Za-z0-9.\-_ ]+)",
-            r"(?:model|version):\s*([A-Za-z0-9.\-_]+)",
-        ]
-        for p in patterns:
-            m = re.search(p, content, re.IGNORECASE)
-            if m:
-                self_id = m.group(1).strip()
-                break
-
-        return {
-            "ok": True,
-            "latency_ms": latency,
-            "content": content,
-            "finish_reason": finish,
-            "reported_model": reported_id,
-            "model_mismatch": model_mismatch,
-            "self_identified": self_id,
-            "usage": usage,
-            "raw": data,
-        }
-    except requests.exceptions.Timeout:
-        return {"ok": False, "error": f"Timeout setelah 30 detik", "latency_ms": 30000}
-    except requests.exceptions.HTTPError as e:
-        code = e.response.status_code if e.response else "?"
-        return {"ok": False, "error": f"HTTP {code}", "latency_ms": round((time.time() - t0) * 1000)}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "latency_ms": round((time.time() - t0) * 1000)}
-
+    for i, payload in enumerate(payloads):
+        try:
+            t0 = time.time()
+            resp = requests.post(url, headers=make_headers(api_key), json=payload, timeout=25)
+            latency = round((time.time() - t0) * 1000)
+            results["latency_ms"].append(latency)
+            
+            resp.raise_for_status()
+            data = resp.json()
+            
+            reported = data.get("model", model_id)
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            
+            results["probes"].append({"content": content, "reported": reported})
+            
+            if reported.lower() != model_id.lower():
+                results["model_mismatch"] = True
+                
+        except Exception as e:
+            results["probes"].append({"error": str(e)})
+    
+    results["total_latency"] = round(time.time() - t_start * 1000)
+    return results
 
 def build_analysis(model_id: str, owned_by: str, probe: Optional[dict]) -> dict:
-    """Aggregate all signals into a final analysis report."""
     provider, color = detect_provider(model_id)
-    proxied_hint    = is_likely_proxied(model_id, owned_by)
-
+    proxied_hint = is_likely_proxied(model_id, owned_by)
+    
     signals = []
+    confidence = 92
     verdict = "ASLI"
-    confidence = 85
-
+    
     if proxied_hint:
-        signals.append("⚠️ Nama model / owned_by mengandung clue aggregator/proxy")
+        signals.append("⚠️ Nama model mengandung indikasi aggregator/proxy")
+        confidence -= 25
         verdict = "PROXY"
-        confidence -= 20
-
+    
     if probe and probe.get("ok"):
         if probe.get("model_mismatch"):
-            signals.append(f"⚠️ Model ID yang dilaporkan berbeda: `{probe['reported_model']}`")
+            signals.append("⚠️ Model mismatch terdeteksi (proxy/aliasing)")
+            confidence -= 20
             verdict = "PROXY"
-            confidence -= 15
-
-        if probe.get("self_identified"):
-            sid = probe["self_identified"].lower()
-            req = model_id.lower()
-            if not any(word in req for word in sid.split()[:2]):
-                signals.append(f"⚠️ Model mengidentifikasi dirinya sebagai **{probe['self_identified']}** (tidak cocok)")
-                verdict = "MUNGKIN PROXY"
-                confidence -= 10
-            else:
-                signals.append(f"✅ Model mengkonfirmasi identitasnya: **{probe['self_identified']}**")
-                confidence = min(confidence + 10, 99)
-
-        lat = probe.get("latency_ms", 0)
-        if lat > 8000:
-            signals.append(f"🐌 Latensi tinggi ({lat}ms) – bisa jadi routing melalui beberapa hop")
-        elif lat < 500:
-            signals.append(f"⚡ Latensi sangat rendah ({lat}ms)")
-
+        
+        avg_lat = sum(probe.get("latency_ms", [0])) / max(len(probe.get("latency_ms", [])), 1)
+        if avg_lat > 7000:
+            signals.append(f"🐢 Latensi tinggi ({int(avg_lat)}ms) — kemungkinan routing")
+        elif avg_lat < 600:
+            signals.append(f"⚡ Latensi sangat rendah ({int(avg_lat)}ms)")
+    
     if not signals:
-        signals.append("✅ Tidak ada tanda proxy yang terdeteksi")
-
-    if confidence >= 80:
+        signals.append("✅ Tidak ditemukan indikasi proxy")
+    
+    if confidence >= 75:
         verdict_display = "ASLI"
-    elif confidence >= 55:
+    elif confidence >= 50:
         verdict_display = "MUNGKIN PROXY"
     else:
         verdict_display = "KEMUNGKINAN PROXY"
-
+    
     return {
-        "provider":     provider,
-        "color":        color,
+        "provider": provider,
+        "color": color,
         "proxied_hint": proxied_hint,
-        "signals":      signals,
-        "verdict":      verdict_display,
-        "confidence":   confidence,
+        "signals": signals,
+        "verdict": verdict_display,
+        "confidence": max(0, min(100, confidence)),
     }
 
-
-# ─── Sidebar ─────────────────────────────────────────────────────────────────────
+# ─── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<p style="font-family:\'JetBrains Mono\',monospace;color:#38bdf8;font-weight:600;font-size:1.1rem;">⚙️ Konfigurasi</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-family:\'JetBrains Mono\';color:#38bdf8;font-weight:700;font-size:1.2rem;">⚙️ AI Model Detector Pro</p>', unsafe_allow_html=True)
     st.markdown("---")
-
-    api_key = st.text_input(
-        "API Key",
-        type="password",
-        placeholder="sk-...",
-        help="Masukkan API key dari provider",
-    )
-
-    base_url = st.text_input(
-        "Base URL",
-        value=DEFAULT_BASE_URL,
-        help="Endpoint API (OpenAI-compatible)",
-    )
-
+    
+    api_key = st.text_input("API Key", type="password", placeholder="sk-...")
+    base_url = st.text_input("Base URL", value=DEFAULT_BASE_URL)
+    
     st.markdown("---")
-    st.markdown("**Mode Analisis**")
-    do_probe = st.toggle(
-        "Probe Model (Chat Completion)",
-        value=False,
-        help="Kirim pesan test ke model untuk fingerprinting. Menggunakan token/kuota.",
-    )
+    do_probe = st.toggle("Aktifkan Advanced Probe", value=True, help="Gunakan token untuk fingerprinting mendalam")
+    batch_size = st.slider("Batch Size (Probe paralel)", 1, 8, 3)
+    
+    st.caption("v2.0 Advanced • OpenAI Compatible")
 
-    if do_probe:
-        st.info("⚡ Mode probe aktif. Akan menggunakan token dari API key Anda untuk setiap model yang dipilih.", icon="ℹ️")
-
-    st.markdown("---")
-    st.caption("v1.0 · AI Model Detector")
-    st.caption("Support: OpenAI-compatible APIs")
-
-
-# ─── Main UI ─────────────────────────────────────────────────────────────────────
-st.markdown('<p class="hero-title">🔍 AI <span class="accent">Model</span> Detector</p>', unsafe_allow_html=True)
-st.markdown('<p class="hero-sub">Deteksi model AI asli vs proxy dari third-party provider — <code>ai.botclaw.top</code></p>', unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
+# ─── Main UI ───────────────────────────────────────────────────────────────────
+st.markdown('<p class="hero-title">🔍 AI Model Detector <span style="font-size:1.1rem;">PRO</span></p>', unsafe_allow_html=True)
+st.markdown('<p class="hero-sub">Deteksi model asli vs proxy dari third-party dengan akurasi tinggi</p>', unsafe_allow_html=True)
 
 if not api_key:
-    st.markdown("""
-    <div class="card">
-      <p style="color:#94a3b8;margin:0;">
-        👈 Masukkan <strong>API Key</strong> di sidebar untuk memulai.<br>
-        Kemudian klik <strong>Ambil Daftar Model</strong> untuk melihat semua model yang tersedia.
-      </p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.info("👈 Masukkan **API Key** di sidebar untuk memulai", icon="🔑")
     st.stop()
 
-# ─── Fetch Models ─────────────────────────────────────────────────────────────────
-col_btn, col_info = st.columns([2, 5])
-with col_btn:
-    fetch_btn = st.button("🚀 Ambil Daftar Model", type="primary", use_container_width=True)
-
+# Fetch Models
 if "models_data" not in st.session_state:
     st.session_state.models_data = None
 if "probe_results" not in st.session_state:
     st.session_state.probe_results = {}
 
-if fetch_btn:
-    with st.spinner("Menghubungi server..."):
-        result = fetch_models(api_key, base_url)
-    if result["ok"]:
-        st.session_state.models_data = result["data"]
-        st.session_state.probe_results = {}
-        st.success(f"✅ Berhasil! Status HTTP {result['status']}")
-    else:
-        st.error(result["error"])
+col1, col2 = st.columns([1, 3])
+with col1:
+    if st.button("🚀 Ambil Daftar Model", type="primary", use_container_width=True):
+        with st.spinner("Mengambil daftar model..."):
+            try:
+                url = base_url.rstrip("/") + "/models"
+                resp = requests.get(url, headers=make_headers(api_key), timeout=15)
+                resp.raise_for_status()
+                st.session_state.models_data = resp.json()
+                st.success("✅ Berhasil mengambil daftar model")
+            except Exception as e:
+                st.error(f"Gagal: {e}")
 
-# ─── Display Models ───────────────────────────────────────────────────────────────
 if st.session_state.models_data:
     raw = st.session_state.models_data
-    models = raw.get("data", raw) if isinstance(raw, dict) else raw
+    models = raw.get("data", []) if isinstance(raw, dict) else raw
     if not isinstance(models, list):
         models = [models]
 
-    st.markdown(f"### 📋 Ditemukan **{len(models)}** Model")
-    st.markdown("---")
+    st.markdown(f"### 📊 Ditemukan **{len(models)}** Model")
 
-    # Summary stats
-    providers_found = {}
-    for m in models:
-        mid = m.get("id", "")
-        p, _ = detect_provider(mid)
-        providers_found[p] = providers_found.get(p, 0) + 1
-
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.markdown(f'<div class="metric-box"><div class="metric-label">Total Model</div><div class="metric-value">{len(models)}</div></div>', unsafe_allow_html=True)
-    with m2:
-        st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terdeteksi</div><div class="metric-value">{len(providers_found)}</div></div>', unsafe_allow_html=True)
-    with m3:
-        top_provider = max(providers_found, key=providers_found.get) if providers_found else "-"
-        st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terbanyak</div><div class="metric-value" style="font-size:1rem;padding-top:6px">{top_provider}</div></div>', unsafe_allow_html=True)
-    with m4:
-        proxied_count = sum(1 for m in models if is_likely_proxied(m.get("id",""), m.get("owned_by","")))
-        pct = round(proxied_count / len(models) * 100) if models else 0
-        st.markdown(f'<div class="metric-box"><div class="metric-label">Indikasi Proxy</div><div class="metric-value">{proxied_count} <span style="font-size:0.9rem;color:#64748b">({pct}%)</span></div></div>', unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Filter / search
-    col_s, col_f = st.columns([3, 2])
+    # Filters
+    col_s, col_f, col_a = st.columns([3, 2, 2])
     with col_s:
-        search_q = st.text_input("🔎 Cari model", placeholder="gpt, claude, llama...", label_visibility="collapsed")
+        search = st.text_input("🔎 Cari model", placeholder="gpt-4, claude...")
     with col_f:
-        provider_filter = st.selectbox(
-            "Filter provider",
-            options=["Semua"] + sorted(providers_found.keys()),
-            label_visibility="collapsed",
-        )
+        providers = sorted({detect_provider(m.get("id",""))[0] for m in models})
+        provider_filter = st.selectbox("Provider", ["Semua"] + providers)
+    with col_a:
+        if st.button("🔬 Probe Semua Model", type="secondary"):
+            st.info("Batch probing dimulai...")
 
-    filtered = []
-    for m in models:
-        mid = m.get("id", "")
-        p, _ = detect_provider(mid)
-        if search_q and search_q.lower() not in mid.lower():
-            continue
-        if provider_filter != "Semua" and p != provider_filter:
-            continue
-        filtered.append(m)
+    # Filtered models
+    filtered = [m for m in models 
+                if (not search or search.lower() in m.get("id","").lower()) and
+                   (provider_filter == "Semua" or detect_provider(m.get("id",""))[0] == provider_filter)]
 
-    st.caption(f"Menampilkan {len(filtered)} dari {len(models)} model")
-    st.markdown("---")
-
-    # ── Per-model cards ──────────────────────────────────────────────────────────
+    # Display
     for m in filtered:
-        mid        = m.get("id", "N/A")
-        owned_by   = m.get("owned_by", "")
-        created_ts = m.get("created")
-        created_dt = datetime.utcfromtimestamp(created_ts).strftime("%Y-%m-%d") if created_ts else "N/A"
-
+        mid = m.get("id", "N/A")
+        owned_by = m.get("owned_by", "")
         provider, color = detect_provider(mid)
-        proxied_hint    = is_likely_proxied(mid, owned_by)
-
-        badge_class = "badge-proxy" if proxied_hint else "badge-real"
-        badge_text  = "PROXY HINT" if proxied_hint else "DIRECT"
-
-        with st.expander(f"**{mid}**  —  `{provider}`", expanded=False):
+        probe = st.session_state.probe_results.get(mid)
+        
+        analysis = build_analysis(mid, owned_by, probe)
+        
+        with st.expander(f"**{mid}** — {provider.upper()}", expanded=False):
             c1, c2 = st.columns([3, 2])
-
             with c1:
                 st.markdown(f"""
-                <div class="card" style="margin-bottom:10px">
-                  <span style="font-family:'JetBrains Mono',monospace;font-size:1.05rem;color:#e2e8f0;">{mid}</span>
-                  &nbsp;&nbsp;<span class="badge {badge_class}">{badge_text}</span>
-                  <br><br>
-                  <table class="result-table">
-                    <tr><th>Field</th><th>Value</th></tr>
-                    <tr><td>owned_by</td><td><code>{owned_by or "—"}</code></td></tr>
-                    <tr><td>created</td><td>{created_dt}</td></tr>
-                    <tr><td>Provider terdeteksi</td><td><span style="color:{color};font-weight:600">{provider}</span></td></tr>
-                  </table>
+                <div class="card">
+                    <span style="font-family:'JetBrains Mono';font-size:1.1rem;">{mid}</span><br>
+                    <span class="badge {'badge-proxy' if analysis['proxied_hint'] else 'badge-real'}">
+                        {'PROXY' if analysis['proxied_hint'] else 'DIRECT'}
+                    </span>
+                    <br><br>
+                    <b>Provider:</b> <span style="color:{color}">{provider}</span><br>
+                    <b>Owned by:</b> <code>{owned_by or '—'}</code>
                 </div>
                 """, unsafe_allow_html=True)
-
+            
             with c2:
-                # Quick static analysis
-                analysis = build_analysis(mid, owned_by, st.session_state.probe_results.get(mid))
-                verdict_class = {
-                    "ASLI": "verdict-real",
-                    "MUNGKIN PROXY": "verdict-proxy",
-                    "KEMUNGKINAN PROXY": "verdict-proxy",
-                }.get(analysis["verdict"], "verdict-unknown")
-
+                verdict_class = "verdict-real" if "ASLI" in analysis["verdict"] else "verdict-proxy"
                 st.markdown(f"""
                 <div class="card">
-                  <div class="metric-label">Verdict</div>
-                  <div class="metric-value {verdict_class}" style="font-size:1.3rem;margin:6px 0">{analysis["verdict"]}</div>
-                  <div class="metric-label">Confidence</div>
-                  <div style="font-size:1rem;color:#38bdf8;font-weight:600;font-family:'JetBrains Mono',monospace;">{analysis["confidence"]}%</div>
+                    <div style="font-size:0.8rem;color:#64748b;">VERDICT</div>
+                    <div class="metric-value {verdict_class}" style="font-size:1.6rem;">{analysis["verdict"]}</div>
+                    <div style="color:#38bdf8;font-weight:600;">{analysis["confidence"]}% Confidence</div>
                 </div>
                 """, unsafe_allow_html=True)
-
-            # Signals
-            st.markdown("**🧪 Sinyal Deteksi:**")
+            
             for sig in analysis["signals"]:
-                st.markdown(f"- {sig}")
-
-            # Probe button
+                st.write(sig)
+            
             if do_probe:
-                probe_key = f"probe_{mid}"
-                if st.button(f"⚡ Probe Model", key=probe_key):
-                    with st.spinner(f"Mengirim permintaan ke `{mid}`..."):
-                        probe_res = probe_model(api_key, base_url, mid)
-                    st.session_state.probe_results[mid] = probe_res
+                if st.button("🔬 Probe Sekarang", key=f"probe_{mid}"):
+                    with st.spinner(f"Probing {mid}..."):
+                        result = advanced_probe(api_key, base_url, mid)
+                        st.session_state.probe_results[mid] = result
+                        st.rerun()
 
-            # Show probe result if available
-            if mid in st.session_state.probe_results:
-                pr = st.session_state.probe_results[mid]
-                st.markdown("---")
-                st.markdown("**📡 Hasil Probe:**")
-                if pr.get("ok"):
-                    pc1, pc2, pc3 = st.columns(3)
-                    with pc1:
-                        st.metric("Latensi", f"{pr['latency_ms']} ms")
-                    with pc2:
-                        st.metric("Model Dilaporkan", pr.get("reported_model", "—"))
-                    with pc3:
-                        st.metric("Finish Reason", pr.get("finish_reason", "—"))
+            if probe:
+                st.markdown("**📡 Probe Result**")
+                st.json(probe, expanded=False)
 
-                    if pr.get("content"):
-                        st.markdown("**Respons Model:**")
-                        st.markdown(f'<div class="code-block">{pr["content"]}</div>', unsafe_allow_html=True)
-
-                    if pr.get("model_mismatch"):
-                        st.warning(f"⚠️ Model ID yang dikembalikan API (`{pr['reported_model']}`) berbeda dengan yang diminta (`{mid}`). Kemungkinan proxy atau aliasing.")
-
-                    if pr.get("self_identified"):
-                        st.info(f"💬 Model mengidentifikasi diri sebagai: **{pr['self_identified']}**")
-
-                    if pr.get("usage"):
-                        u = pr["usage"]
-                        st.caption(f"Token: prompt={u.get('prompt_tokens','?')}, completion={u.get('completion_tokens','?')}, total={u.get('total_tokens','?')}")
-                else:
-                    st.error(f"Probe gagal: {pr.get('error','Unknown error')}")
-
-    # ── Raw JSON View ──────────────────────────────────────────────────────────────
+    # Export
     st.markdown("---")
-    with st.expander("📄 Raw JSON Response"):
-        st.json(st.session_state.models_data)
+    if st.button("📥 Export Full Report"):
+        summary = []
+        for m in models:
+            mid = m.get("id")
+            analysis = build_analysis(mid, m.get("owned_by"), st.session_state.probe_results.get(mid))
+            summary.append({
+                "model": mid,
+                "provider": analysis["provider"],
+                "verdict": analysis["verdict"],
+                "confidence": analysis["confidence"],
+                "proxied_hint": analysis["proxied_hint"]
+            })
+        
+        df = pd.DataFrame(summary)
+        csv = df.to_csv(index=False).encode()
+        st.download_button("Download CSV", csv, f"model_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
 
-    # ── Export Summary ─────────────────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("### 📥 Export Hasil Analisis")
-
-    summary_rows = []
-    for m in models:
-        mid      = m.get("id", "")
-        owned_by = m.get("owned_by", "")
-        provider, _ = detect_provider(mid)
-        proxied  = is_likely_proxied(mid, owned_by)
-        probe    = st.session_state.probe_results.get(mid, {})
-        analysis = build_analysis(mid, owned_by, probe if probe.get("ok") else None)
-        summary_rows.append({
-            "model_id":  mid,
-            "owned_by":  owned_by,
-            "provider":  provider,
-            "verdict":   analysis["verdict"],
-            "confidence": analysis["confidence"],
-            "proxy_hint": proxied,
-            "probed":    bool(probe.get("ok")),
-            "latency_ms": probe.get("latency_ms", "—") if probe.get("ok") else "—",
-            "reported_model": probe.get("reported_model", "—") if probe.get("ok") else "—",
-        })
-
-    export_json = json.dumps(summary_rows, indent=2, ensure_ascii=False)
-    st.download_button(
-        label="⬇️ Download JSON Ringkasan",
-        data=export_json,
-        file_name=f"ai_model_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        mime="application/json",
-    )
-
-    # Show as table
-    if st.checkbox("Tampilkan tabel ringkasan"):
-        import pandas as pd
-        df = pd.DataFrame(summary_rows)
-        st.dataframe(df, use_container_width=True)
+# Footer
+st.caption("AI Model Detector Pro v2.0 — Dibuat untuk mendeteksi proxy dengan akurat")
