@@ -3,72 +3,129 @@ import requests
 import json
 import time
 import re
-import threading
 from datetime import datetime
-from typing import Optional, Dict, List, Any
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Optional
 
 # ─── Page Config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="AI Model Detector Pro",
+    page_title="AI Model Detector",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ─── Custom CSS (More Premium) ─────────────────────────────────────────────────
+# ─── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    .stApp {
-        background: linear-gradient(135deg, #0a0c12 0%, #11151f 100%);
-    }
-    .hero-title {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 2.8rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #38bdf8, #a855f7, #ec4899);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        letter-spacing: -1.5px;
-        margin-bottom: 0;
-    }
-    .hero-sub { color: #64748b; font-size: 1.05rem; }
-    .card {
-        background: rgba(255,255,255,0.045);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 20px;
-    }
-    .badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-    }
-    .badge-real { background: rgba(74,222,128,0.15); color: #4ade80; border: 1px solid #4ade80; }
-    .badge-proxy { background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid #fb923c; }
-    .verdict-real { color: #4ade80; font-weight: 700; }
-    .verdict-proxy { color: #fb923c; font-weight: 700; }
-    .metric-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
-    .probe-log {
-        font-family: 'JetBrains Mono', monospace;
-        background: #0f172a;
-        padding: 12px;
-        border-radius: 8px;
-        max-height: 320px;
-        overflow-y: auto;
-        font-size: 0.82rem;
-    }
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+  html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Dark theme background */
+  .stApp {
+    background: linear-gradient(135deg, #0d0f14 0%, #111520 50%, #0d0f14 100%);
+  }
+
+  /* Main title */
+  .hero-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2.2rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    letter-spacing: -0.5px;
+    margin-bottom: 0;
+  }
+  .hero-sub {
+    font-size: 0.95rem;
+    color: #64748b;
+    margin-top: 4px;
+    font-weight: 400;
+  }
+  .accent { color: #38bdf8; }
+
+  /* Card containers */
+  .card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+
+  /* Provider badge */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-real    { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+  .badge-proxy   { background: rgba(251,146,60,0.15); color: #fb923c; border: 1px solid rgba(251,146,60,0.3); }
+  .badge-unknown { background: rgba(148,163,184,0.15);color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
+
+  /* Result metric */
+  .metric-box {
+    background: rgba(56,189,248,0.05);
+    border: 1px solid rgba(56,189,248,0.15);
+    border-radius: 8px;
+    padding: 14px 18px;
+    text-align: center;
+  }
+  .metric-label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; }
+  .metric-value { font-size: 1.5rem; font-weight: 700; color: #38bdf8; font-family: 'JetBrains Mono', monospace; }
+
+  /* Code block style */
+  .code-block {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    color: #94a3b8;
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+
+  /* Verdict colors */
+  .verdict-real    { color: #4ade80; font-weight: 700; }
+  .verdict-proxy   { color: #fb923c; font-weight: 700; }
+  .verdict-unknown { color: #94a3b8; font-weight: 700; }
+
+  /* Sidebar styling */
+  section[data-testid="stSidebar"] {
+    background: rgba(255,255,255,0.02);
+    border-right: 1px solid rgba(255,255,255,0.06);
+  }
+
+  /* Remove default streamlit padding */
+  .block-container { padding-top: 2rem; }
+
+  /* Progress / spinner override */
+  .stSpinner > div { border-top-color: #38bdf8 !important; }
+
+  /* Table */
+  .result-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .result-table th {
+    color: #64748b; text-transform: uppercase; font-size: 0.7rem;
+    letter-spacing: 0.8px; padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left;
+  }
+  .result-table td {
+    padding: 10px 12px; color: #e2e8f0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .result-table tr:last-child td { border-bottom: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Constants ─────────────────────────────────────────────────────────────────
+
+# ─── Constants ───────────────────────────────────────────────────────────────────
 DEFAULT_BASE_URL = "https://ai.botclaw.top/v1"
 
 PROVIDER_SIGNATURES = {
@@ -84,243 +141,396 @@ PROVIDER_SIGNATURES = {
     "perplexity": {"keywords": ["pplx", "sonar"], "color": "#22c55e"},
     "nous":       {"keywords": ["nous", "hermes", "capybara"], "color": "#a855f7"},
     "microsoft":  {"keywords": ["phi-", "wizardlm"], "color": "#0078d4"},
-    "groq":       {"keywords": ["groq", "llama3-groq"], "color": "#f97316"},
 }
 
 PROXY_CLUES = [
-    "openrouter", "together", "replicate", "fireworks", "anyscale", "groq",
-    "lepton", "octo", "deepinfra", "modal", "novita", "botclaw", "aiml",
-    "corcel", "siliconflow", "nebius", "hyperbolic", "massedcompute", "runpod"
+    "openrouter", "together", "replicate", "fireworks", "anyscale",
+    "perplexity", "groq", "lepton", "octo", "deepinfra", "modal",
+    "novita", "botclaw", "aiml", "corcel",
 ]
 
-# ─── Helper Functions ─────────────────────────────────────────────────────────
+
+# ─── Helper Functions ─────────────────────────────────────────────────────────────
 def make_headers(api_key: str) -> dict:
     return {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
+
 def detect_provider(model_id: str) -> tuple[str, str]:
+    """Return (provider_name, hex_color) based on model ID keywords."""
     m = model_id.lower()
     for provider, meta in PROVIDER_SIGNATURES.items():
         if any(kw in m for kw in meta["keywords"]):
             return provider, meta["color"]
     return "unknown", "#64748b"
 
+
 def is_likely_proxied(model_id: str, owned_by: str) -> bool:
+    """Heuristic: check if model is likely proxied through aggregator."""
     combined = (model_id + " " + (owned_by or "")).lower()
     return any(clue in combined for clue in PROXY_CLUES)
 
-def advanced_probe(api_key: str, base_url: str, model_id: str) -> dict:
-    """Advanced probing with multiple signals"""
-    url = base_url.rstrip("/") + "/chat/completions"
-    payloads = [
-        {"model": model_id, "messages": [{"role": "user", "content": "Reply only with your exact model name and version."}], "max_tokens": 60, "temperature": 0},
-        {"model": model_id, "messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Who are you?"}], "max_tokens": 80, "temperature": 0},
-    ]
-    
-    results = {"ok": True, "probes": [], "latency_ms": [], "model_mismatch": False}
-    t_start = time.time()
 
-    for i, payload in enumerate(payloads):
+def fetch_models(api_key: str, base_url: str) -> dict:
+    """Fetch /v1/models from the endpoint."""
+    url = base_url.rstrip("/") + "/models"
+    try:
+        resp = requests.get(url, headers=make_headers(api_key), timeout=15)
+        resp.raise_for_status()
+        return {"ok": True, "data": resp.json(), "status": resp.status_code}
+    except requests.exceptions.ConnectionError:
+        return {"ok": False, "error": "❌ Tidak bisa terhubung ke server. Periksa URL."}
+    except requests.exceptions.Timeout:
+        return {"ok": False, "error": "⏳ Request timeout setelah 15 detik."}
+    except requests.exceptions.HTTPError as e:
+        code = e.response.status_code if e.response else "?"
+        body = ""
         try:
-            t0 = time.time()
-            resp = requests.post(url, headers=make_headers(api_key), json=payload, timeout=25)
-            latency = round((time.time() - t0) * 1000)
-            results["latency_ms"].append(latency)
-            
-            resp.raise_for_status()
-            data = resp.json()
-            
-            reported = data.get("model", model_id)
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
-            results["probes"].append({"content": content, "reported": reported})
-            
-            if reported.lower() != model_id.lower():
-                results["model_mismatch"] = True
-                
-        except Exception as e:
-            results["probes"].append({"error": str(e)})
-    
-    results["total_latency"] = round(time.time() - t_start * 1000)
-    return results
+            body = e.response.json()
+        except Exception:
+            pass
+        if code == 401:
+            return {"ok": False, "error": "🔐 API key tidak valid atau tidak memiliki akses."}
+        return {"ok": False, "error": f"HTTP {code}: {body or str(e)}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
-def build_analysis(model_id: str, owned_by: str, probe: Optional[dict]) -> dict:
-    provider, color = detect_provider(model_id)
-    proxied_hint = is_likely_proxied(model_id, owned_by)
-    
-    signals = []
-    confidence = 92
-    verdict = "ASLI"
-    
-    if proxied_hint:
-        signals.append("⚠️ Nama model mengandung indikasi aggregator/proxy")
-        confidence -= 25
-        verdict = "PROXY"
-    
-    if probe and probe.get("ok"):
-        if probe.get("model_mismatch"):
-            signals.append("⚠️ Model mismatch terdeteksi (proxy/aliasing)")
-            confidence -= 20
-            verdict = "PROXY"
-        
-        avg_lat = sum(probe.get("latency_ms", [0])) / max(len(probe.get("latency_ms", [])), 1)
-        if avg_lat > 7000:
-            signals.append(f"🐢 Latensi tinggi ({int(avg_lat)}ms) — kemungkinan routing")
-        elif avg_lat < 600:
-            signals.append(f"⚡ Latensi sangat rendah ({int(avg_lat)}ms)")
-    
-    if not signals:
-        signals.append("✅ Tidak ditemukan indikasi proxy")
-    
-    if confidence >= 75:
-        verdict_display = "ASLI"
-    elif confidence >= 50:
-        verdict_display = "MUNGKIN PROXY"
-    else:
-        verdict_display = "KEMUNGKINAN PROXY"
-    
+
+def extract_headers_from_response(resp) -> dict:
+    """Extract fingerprint-relevant headers from response."""
     return {
-        "provider": provider,
-        "color": color,
-        "proxied_hint": proxied_hint,
-        "signals": signals,
-        "verdict": verdict_display,
-        "confidence": max(0, min(100, confidence)),
+        "x-ratelimit-limit": resp.headers.get("x-ratelimit-limit-requests", "—"),
+        "x-ratelimit-remaining": resp.headers.get("x-ratelimit-remaining-requests", "—"),
+        "x-ratelimit-reset": resp.headers.get("x-ratelimit-reset-requests", "—"),
+        "openai-version": resp.headers.get("openai-version", "—"),
+        "openai-processing-ms": resp.headers.get("openai-processing-ms", "—"),
+        "x-served-by": resp.headers.get("x-served-by", "—"),
+        "server": resp.headers.get("server", "—"),
     }
 
-# ─── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown('<p style="font-family:\'JetBrains Mono\';color:#38bdf8;font-weight:700;font-size:1.2rem;">⚙️ AI Model Detector Pro</p>', unsafe_allow_html=True)
-    st.markdown("---")
-    
-    api_key = st.text_input("API Key", type="password", placeholder="sk-...")
-    base_url = st.text_input("Base URL", value=DEFAULT_BASE_URL)
-    
-    st.markdown("---")
-    do_probe = st.toggle("Aktifkan Advanced Probe", value=True, help="Gunakan token untuk fingerprinting mendalam")
-    batch_size = st.slider("Batch Size (Probe paralel)", 1, 8, 3)
-    
-    st.caption("v2.0 Advanced • OpenAI Compatible")
 
-# ─── Main UI ───────────────────────────────────────────────────────────────────
-st.markdown('<p class="hero-title">🔍 AI Model Detector <span style="font-size:1.1rem;">PRO</span></p>', unsafe_allow_html=True)
-st.markdown('<p class="hero-sub">Deteksi model asli vs proxy dari third-party dengan akurasi tinggi</p>', unsafe_allow_html=True)
+def probe_model(api_key: str, base_url: str, model_id: str) -> dict:
+    """
+    Send multiple test prompts to fingerprint actual model behavior.
+    Detects: latency, model ID mismatch, self-identification, rate limit clues, proxy indicators.
+    """
+    url = base_url.rstrip("/") + "/chat/completions"
+    
+    # Test 1: Basic identity
+    payload_1 = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "What is your model name and version? Answer in one line only."}],
+        "max_tokens": 80,
+        "temperature": 0,
+    }
+    
+    # Test 2: System-level knowledge (to detect if it's actually the claimed model)
+    payload_2 = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "What is your training cutoff date? Reply with YYYY-MM format only."}],
+        "max_tokens": 20,
+        "temperature": 0,
+    }
+    
+    t0 = time.time()
+    results = {"ok": False, "tests": []}
+    
+    try:
+        # Test 1
+        resp1 = requests.post(url, headers=make_headers(api_key), json=payload_1, timeout=30)
+        lat1 = round((time.time() - t0) * 1000)
+        resp1.raise_for_status()
+        data1 = resp1.json()
+        headers1 = extract_headers_from_response(resp1)
+        
+        choice1 = data1.get("choices", [{}])[0]
+        content1 = choice1.get("message", {}).get("content", "")
+        reported_id = data1.get("model", model_id)
+        usage1 = data1.get("usage", {})
+        
+        results["tests"].append({
+            "name": "Identity Test",
+            "latency_ms": lat1,
+            "content": content1,
+            "reported_model": reported_id,
+            "usage": usage1,
+        })
+        
+        # Test 2
+        t_test2 = time.time()
+        resp2 = requests.post(url, headers=make_headers(api_key), json=payload_2, timeout=30)
+        lat2 = round((time.time() - t_test2) * 1000)
+        resp2.raise_for_status()
+        data2 = resp2.json()
+        headers2 = extract_headers_from_response(resp2)
+        
+        choice2 = data2.get("choices", [{}])[0]
+        content2 = choice2.get("message", {}).get("content", "")
+        
+        results["tests"].append({
+            "name": "Training Cutoff Test",
+            "latency_ms": lat2,
+            "content": content2,
+        })
+        
+        # Analysis
+        model_mismatch = reported_id.lower() != model_id.lower()
+        avg_latency = (lat1 + lat2) // 2
+        
+        # Self-identification pattern matching
+        self_id = None
+        patterns = [
+            r"(?:i am|i'm|my (?:name|model|version) is|i(?:'m| am) called)\s+([A-Za-z0-9.\-_\s]+?)(?:\.|,|$)",
+            r"(?:model|version):\s*([A-Za-z0-9.\-_]+)",
+            r"^([A-Za-z0-9\-. ]+)\s*(?:model|by|version|v[\d.])",
+        ]
+        for p in patterns:
+            m = re.search(p, content1, re.IGNORECASE)
+            if m:
+                self_id = m.group(1).strip()
+                break
+        
+        # Rate limit header analysis
+        rl_limit = headers1.get("x-ratelimit-limit", "—")
+        rl_header_present = rl_limit != "—"
+        
+        results.update({
+            "ok": True,
+            "avg_latency_ms": avg_latency,
+            "model_mismatch": model_mismatch,
+            "self_identified": self_id,
+            "reported_model": reported_id,
+            "headers": headers1,
+            "rate_limit_header": rl_header_present,
+            "raw_1": data1,
+            "raw_2": data2,
+        })
+        
+        return results
+        
+    except requests.exceptions.Timeout:
+        return {"ok": False, "error": "⏳ Timeout 30s", "tests": results.get("tests", [])}
+    except requests.exceptions.HTTPError as e:
+        code = e.response.status_code if e.response else "?"
+        return {"ok": False, "error": f"HTTP {code}", "tests": results.get("tests", [])}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "tests": results.get("tests", [])}
+
+
+def build_analysis(model_id: str, owned_by: str, probe: Optional[dict]) -> dict:
+    """Aggregate all signals into a final analysis report, including cracked/resold detection."""
+    provider, color = detect_provider(model_id)
+    proxied_hint    = is_likely_proxied(model_id, owned_by)
+
+    signals = []
+    verdict = "ASLI"
+    confidence = 85
+    cracked_score = 0  # 0-100, higher = more likely cracked/resold
+
+    # Static analysis
+    if proxied_hint:
+        signals.append("⚠️ Nama model / owned_by mengandung clue aggregator/proxy")
+        verdict = "PROXY"
+        confidence -= 20
+        cracked_score += 15
+
+    # Dynamic analysis (from probe)
+    if probe and probe.get("ok"):
+        tests = probe.get("tests", [])
+        avg_lat = probe.get("avg_latency_ms", 0)
+        
+        # ── Model ID Mismatch (Strong indicator of resold/cracked)
+        if probe.get("model_mismatch"):
+            req_id = model_id.lower()
+            rep_id = probe.get("reported_model", "").lower()
+            signals.append(f"🚨 **CRITICAL**: Model ID mismatch — requested `{model_id}` but server returned `{probe['reported_model']}`")
+            verdict = "RESOLD / PROXIED"
+            confidence -= 30
+            cracked_score += 35  # Very strong indicator
+
+        # ── Self-identification test
+        if probe.get("self_identified"):
+            sid = probe["self_identified"].lower()
+            req = model_id.lower()
+            
+            # Check if model correctly identifies itself
+            req_tokens = set(req.replace("-", " ").split())
+            sid_tokens = set(sid.replace("-", " ").split()[:2])
+            
+            if sid_tokens.isdisjoint(req_tokens):
+                signals.append(f"🚨 Model mengidentifikasi sebagai **{probe['self_identified']}** ≠ **{model_id}** (Strong mismatch)")
+                verdict = "KEMUNGKINAN CRACKED"
+                confidence -= 20
+                cracked_score += 30
+            else:
+                signals.append(f"✅ Model mengkonfirmasi diri: **{probe['self_identified']}**")
+                cracked_score -= 10
+                confidence = min(confidence + 5, 95)
+
+        # ── Latency analysis (proxy routing indicator)
+        if avg_lat > 5000:
+            signals.append(f"🐌 **Latency sangat tinggi ({avg_lat}ms)** — kemungkinan routing melalui proxy yang jauh")
+            cracked_score += 20
+            confidence -= 10
+        elif avg_lat > 2500:
+            signals.append(f"⏱️ Latency tinggi ({avg_lat}ms) — mungkin ada routing overhead")
+            cracked_score += 10
+        elif avg_lat < 400:
+            signals.append(f"⚡ Latency sangat rendah ({avg_lat}ms) — possibly direct/local")
+            cracked_score -= 5
+
+        # ── Rate limit headers (API gateway fingerprint)
+        if probe.get("headers", {}).get("x-ratelimit-limit") != "—":
+            signals.append("✅ Rate limit headers present — legitimate API gateway")
+            cracked_score -= 5
+        else:
+            signals.append("⚠️ No rate limit headers — might indicate basic proxy wrapper")
+            cracked_score += 5
+
+        # ── OpenAI Processing MS (presence = better authenticity)
+        if probe.get("headers", {}).get("openai-processing-ms") != "—":
+            signals.append("✅ OpenAI processing metadata found")
+        else:
+            if "claude" in model_id.lower() or "anthropic" in owned_by.lower():
+                pass  # Claude models don't use this header
+            else:
+                cracked_score += 3
+
+    else:
+        # No probe available, use static signals only
+        if proxied_hint:
+            cracked_score += 20
+        else:
+            signals.append("✅ Static analysis: No immediate red flags")
+
+    # ── Final verdict based on cracked_score ──
+    cracked_score = max(0, min(100, cracked_score))  # Clamp 0-100
+    
+    if cracked_score >= 70:
+        verdict = "🚨 CRACKED / RESOLD"
+        confidence = max(confidence, 15)
+    elif cracked_score >= 45:
+        verdict = "⚠️ KEMUNGKINAN CRACKED"
+        confidence = max(confidence, 40)
+    elif cracked_score >= 25:
+        verdict = "❓ MUNGKIN PROXY"
+        if confidence < 70:
+            confidence = 60
+    elif proxied_hint and confidence >= 60:
+        verdict = "🔄 AGGREGATOR / PROXY"
+    elif confidence < 60:
+        verdict = "❓ TIDAK JELAS"
+    else:
+        verdict = "✅ KEMUNGKINAN ASLI"
+
+    if not signals:
+        signals.append("✅ Tidak ada tanda anomali yang jelas")
+
+    return {
+        "provider":     provider,
+        "color":        color,
+        "proxied_hint": proxied_hint,
+        "signals":      signals,
+        "verdict":      verdict,
+        "confidence":   confidence,
+        "cracked_score": cracked_score,
+    }
+
+
+# ─── Sidebar ─────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown('<p style="font-family:\'JetBrains Mono\',monospace;color:#38bdf8;font-weight:600;font-size:1.1rem;">⚙️ Konfigurasi</p>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    api_key = st.text_input(
+        "API Key",
+        type="password",
+        placeholder="sk-...",
+        help="Masukkan API key dari provider",
+    )
+
+    base_url = st.text_input(
+        "Base URL",
+        value=DEFAULT_BASE_URL,
+        help="Endpoint API (OpenAI-compatible)",
+    )
+
+    st.markdown("---")
+    st.markdown("**Mode Analisis**")
+    do_probe = st.toggle(
+        "Probe Model (Chat Completion)",
+        value=False,
+        help="Kirim pesan test ke model untuk fingerprinting. Menggunakan token/kuota.",
+    )
+
+    if do_probe:
+        st.info("⚡ Mode probe aktif. Akan menggunakan token dari API key Anda untuk setiap model yang dipilih.", icon="ℹ️")
+
+    st.markdown("---")
+    st.caption("v1.0 · AI Model Detector")
+    st.caption("Support: OpenAI-compatible APIs")
+
+
+# ─── Main UI ─────────────────────────────────────────────────────────────────────
+st.markdown('<p class="hero-title">🔍 AI <span class="accent">Model</span> Detector</p>', unsafe_allow_html=True)
+st.markdown('<p class="hero-sub">Deteksi model AI asli vs proxy dari third-party provider — <code>ai.botclaw.top</code></p>', unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
 if not api_key:
-    st.info("👈 Masukkan **API Key** di sidebar untuk memulai", icon="🔑")
+    st.markdown("""
+    <div class="card">
+      <p style="color:#94a3b8;margin:0;">
+        👈 Masukkan <strong>API Key</strong> di sidebar untuk memulai.<br>
+        Kemudian klik <strong>Ambil Daftar Model</strong> untuk melihat semua model yang tersedia.
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
-# Fetch Models
+# ─── Fetch Models ─────────────────────────────────────────────────────────────────
+col_btn, col_info = st.columns([2, 5])
+with col_btn:
+    fetch_btn = st.button("🚀 Ambil Daftar Model", type="primary", use_container_width=True)
+
 if "models_data" not in st.session_state:
     st.session_state.models_data = None
 if "probe_results" not in st.session_state:
     st.session_state.probe_results = {}
 
-col1, col2 = st.columns([1, 3])
-with col1:
-    if st.button("🚀 Ambil Daftar Model", type="primary", use_container_width=True):
-        with st.spinner("Mengambil daftar model..."):
-            try:
-                url = base_url.rstrip("/") + "/models"
-                resp = requests.get(url, headers=make_headers(api_key), timeout=15)
-                resp.raise_for_status()
-                st.session_state.models_data = resp.json()
-                st.success("✅ Berhasil mengambil daftar model")
-            except Exception as e:
-                st.error(f"Gagal: {e}")
+if fetch_btn:
+    with st.spinner("Menghubungi server..."):
+        result = fetch_models(api_key, base_url)
+    if result["ok"]:
+        st.session_state.models_data = result["data"]
+        st.session_state.probe_results = {}
+        st.success(f"✅ Berhasil! Status HTTP {result['status']}")
+    else:
+        st.error(result["error"])
 
+# ─── Display Models ───────────────────────────────────────────────────────────────
 if st.session_state.models_data:
     raw = st.session_state.models_data
-    models = raw.get("data", []) if isinstance(raw, dict) else raw
+    models = raw.get("data", raw) if isinstance(raw, dict) else raw
     if not isinstance(models, list):
         models = [models]
 
-    st.markdown(f"### 📊 Ditemukan **{len(models)}** Model")
-
-    # Filters
-    col_s, col_f, col_a = st.columns([3, 2, 2])
-    with col_s:
-        search = st.text_input("🔎 Cari model", placeholder="gpt-4, claude...")
-    with col_f:
-        providers = sorted({detect_provider(m.get("id",""))[0] for m in models})
-        provider_filter = st.selectbox("Provider", ["Semua"] + providers)
-    with col_a:
-        if st.button("🔬 Probe Semua Model", type="secondary"):
-            st.info("Batch probing dimulai...")
-
-    # Filtered models
-    filtered = [m for m in models 
-                if (not search or search.lower() in m.get("id","").lower()) and
-                   (provider_filter == "Semua" or detect_provider(m.get("id",""))[0] == provider_filter)]
-
-    # Display
-    for m in filtered:
-        mid = m.get("id", "N/A")
-        owned_by = m.get("owned_by", "")
-        provider, color = detect_provider(mid)
-        probe = st.session_state.probe_results.get(mid)
-        
-        analysis = build_analysis(mid, owned_by, probe)
-        
-        with st.expander(f"**{mid}** — {provider.upper()}", expanded=False):
-            c1, c2 = st.columns([3, 2])
-            with c1:
-                st.markdown(f"""
-                <div class="card">
-                    <span style="font-family:'JetBrains Mono';font-size:1.1rem;">{mid}</span><br>
-                    <span class="badge {'badge-proxy' if analysis['proxied_hint'] else 'badge-real'}">
-                        {'PROXY' if analysis['proxied_hint'] else 'DIRECT'}
-                    </span>
-                    <br><br>
-                    <b>Provider:</b> <span style="color:{color}">{provider}</span><br>
-                    <b>Owned by:</b> <code>{owned_by or '—'}</code>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with c2:
-                verdict_class = "verdict-real" if "ASLI" in analysis["verdict"] else "verdict-proxy"
-                st.markdown(f"""
-                <div class="card">
-                    <div style="font-size:0.8rem;color:#64748b;">VERDICT</div>
-                    <div class="metric-value {verdict_class}" style="font-size:1.6rem;">{analysis["verdict"]}</div>
-                    <div style="color:#38bdf8;font-weight:600;">{analysis["confidence"]}% Confidence</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            for sig in analysis["signals"]:
-                st.write(sig)
-            
-            if do_probe:
-                if st.button("🔬 Probe Sekarang", key=f"probe_{mid}"):
-                    with st.spinner(f"Probing {mid}..."):
-                        result = advanced_probe(api_key, base_url, mid)
-                        st.session_state.probe_results[mid] = result
-                        st.rerun()
-
-            if probe:
-                st.markdown("**📡 Probe Result**")
-                st.json(probe, expanded=False)
-
-    # Export
+    st.markdown(f"### 📋 Ditemukan **{len(models)}** Model")
     st.markdown("---")
-    if st.button("📥 Export Full Report"):
-        summary = []
-        for m in models:
-            mid = m.get("id")
-            analysis = build_analysis(mid, m.get("owned_by"), st.session_state.probe_results.get(mid))
-            summary.append({
-                "model": mid,
-                "provider": analysis["provider"],
-                "verdict": analysis["verdict"],
-                "confidence": analysis["confidence"],
-                "proxied_hint": analysis["proxied_hint"]
-            })
-        
-        df = pd.DataFrame(summary)
-        csv = df.to_csv(index=False).encode()
-        st.download_button("Download CSV", csv, f"model_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", "text/csv")
 
-# Footer
-st.caption("AI Model Detector Pro v2.0 — Dibuat untuk mendeteksi proxy dengan akurat")
+    # Summary stats
+    providers_found = {}
+    for m in models:
+        mid = m.get("id", "")
+        p, _ = detect_provider(mid)
+        providers_found[p] = providers_found.get(p, 0) + 1
+
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.markdown(f'<div class="metric-box"><div class="metric-label">Total Model</div><div class="metric-value">{len(models)}</div></div>', unsafe_allow_html=True)
+    with m2:
+        st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terdeteksi</div><div class="metric-value">{len(providers_found)}</div></div>', unsafe_allow_html=True)
+    with m3:
+        top_provider = max(providers_found, key=providers_found.get) if providers_found else "-"
+        st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terbanyak</div><div class="metric-value" style="font-size:1rem;padding-top:6px">{t
