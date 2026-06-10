@@ -533,4 +533,196 @@ if st.session_state.models_data:
         st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terdeteksi</div><div class="metric-value">{len(providers_found)}</div></div>', unsafe_allow_html=True)
     with m3:
         top_provider = max(providers_found, key=providers_found.get) if providers_found else "-"
-        st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terbanyak</div><div class="metric-value" style="font-size:1rem;padding-top:6px">{t
+        st.markdown(f'<div class="metric-box"><div class="metric-label">Provider Terbanyak</div><div class="metric-value" style="font-size:1rem;padding-top:6px">{top_provider}</div></div>', unsafe_allow_html=True)
+    with m4:
+        proxied_count = sum(1 for m in models if is_likely_proxied(m.get("id",""), m.get("owned_by","")))
+        pct = round(proxied_count / len(models) * 100) if models else 0
+        st.markdown(f'<div class="metric-box"><div class="metric-label">Indikasi Proxy</div><div class="metric-value">{proxied_count} <span style="font-size:0.9rem;color:#64748b">({pct}%)</span></div></div>', unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Filter / search
+    col_s, col_f = st.columns([3, 2])
+    with col_s:
+        search_q = st.text_input("🔎 Cari model", placeholder="gpt, claude, llama...", label_visibility="collapsed")
+    with col_f:
+        provider_filter = st.selectbox(
+            "Filter provider",
+            options=["Semua"] + sorted(providers_found.keys()),
+            label_visibility="collapsed",
+        )
+
+    filtered = []
+    for m in models:
+        mid = m.get("id", "")
+        p, _ = detect_provider(mid)
+        if search_q and search_q.lower() not in mid.lower():
+            continue
+        if provider_filter != "Semua" and p != provider_filter:
+            continue
+        filtered.append(m)
+
+    st.caption(f"Menampilkan {len(filtered)} dari {len(models)} model")
+    st.markdown("---")
+
+    # ── Per-model cards ──────────────────────────────────────────────────────────
+    for m in filtered:
+        mid        = m.get("id", "N/A")
+        owned_by   = m.get("owned_by", "")
+        created_ts = m.get("created")
+        created_dt = datetime.utcfromtimestamp(created_ts).strftime("%Y-%m-%d") if created_ts else "N/A"
+
+        provider, color = detect_provider(mid)
+        proxied_hint    = is_likely_proxied(mid, owned_by)
+
+        badge_class = "badge-proxy" if proxied_hint else "badge-real"
+        badge_text  = "PROXY HINT" if proxied_hint else "DIRECT"
+
+        with st.expander(f"**{mid}**  —  `{provider}`", expanded=False):
+            c1, c2 = st.columns([3, 2])
+
+            with c1:
+                st.markdown(f"""
+                <div class="card" style="margin-bottom:10px">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:1.05rem;color:#e2e8f0;">{mid}</span>
+                  &nbsp;&nbsp;<span class="badge {badge_class}">{badge_text}</span>
+                  <br><br>
+                  <table class="result-table">
+                    <tr><th>Field</th><th>Value</th></tr>
+                    <tr><td>owned_by</td><td><code>{owned_by or "—"}</code></td></tr>
+                    <tr><td>created</td><td>{created_dt}</td></tr>
+                    <tr><td>Provider terdeteksi</td><td><span style="color:{color};font-weight:600">{provider}</span></td></tr>
+                  </table>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with c2:
+                # Quick static analysis
+                analysis = build_analysis(mid, owned_by, st.session_state.probe_results.get(mid))
+                
+                # Determine verdict color and emoji
+                verdict_emoji = "✅" if "ASLI" in analysis["verdict"] else "⚠️" if "PROXY" in analysis["verdict"] else "🚨"
+                verdict_class = {
+                    "✅ KEMUNGKINAN ASLI": "verdict-real",
+                    "🚨 CRACKED / RESOLD": "verdict-proxy",
+                    "⚠️ KEMUNGKINAN CRACKED": "verdict-proxy",
+                    "❓ MUNGKIN PROXY": "verdict-proxy",
+                    "🔄 AGGREGATOR / PROXY": "verdict-proxy",
+                    "❓ TIDAK JELAS": "verdict-unknown",
+                    "🔐 KEMUNGKINAN ASLI": "verdict-real",
+                }.get(analysis["verdict"], "verdict-unknown")
+
+                st.markdown(f"""
+                <div class="card">
+                  <div class="metric-label">VERDICT</div>
+                  <div class="metric-value {verdict_class}" style="font-size:1.1rem;margin:6px 0;line-height:1.4">{analysis["verdict"]}</div>
+                  <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
+                    <div class="metric-label">Confidence</div>
+                    <div style="font-size:1rem;color:#38bdf8;font-weight:600;font-family:'JetBrains Mono',monospace;">{analysis["confidence"]}%</div>
+                    <div class="metric-label" style="margin-top:8px;">Cracked Score</div>
+                    <div style="font-size:0.95rem;color:#fb923c;font-weight:600;font-family:'JetBrains Mono',monospace;">{analysis["cracked_score"]}/100</div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Signals
+            st.markdown("**🧪 Sinyal Deteksi:**")
+            for sig in analysis["signals"]:
+                st.markdown(f"- {sig}")
+
+            # Probe button
+            if do_probe:
+                probe_key = f"probe_{mid}"
+                if st.button(f"⚡ Probe Model", key=probe_key):
+                    with st.spinner(f"Mengirim permintaan ke `{mid}`..."):
+                        probe_res = probe_model(api_key, base_url, mid)
+                    st.session_state.probe_results[mid] = probe_res
+
+            # Show probe result if available
+            if mid in st.session_state.probe_results:
+                pr = st.session_state.probe_results[mid]
+                st.markdown("---")
+                st.markdown("**📡 Hasil Forensic Probe:**")
+                if pr.get("ok"):
+                    # Display test results
+                    tests = pr.get("tests", [])
+                    for test in tests:
+                        st.markdown(f"**{test['name']}** — {test['latency_ms']}ms")
+                        st.markdown(f'<div class="code-block">{test["content"]}</div>', unsafe_allow_html=True)
+                        if test.get("usage"):
+                            u = test["usage"]
+                            st.caption(f"Token: {u.get('prompt_tokens',0)} in, {u.get('completion_tokens',0)} out")
+                        st.markdown("<br>", unsafe_allow_html=True)
+
+                    # Metrics
+                    pc1, pc2, pc3 = st.columns(3)
+                    with pc1:
+                        st.metric("Avg Latency", f"{pr.get('avg_latency_ms', 0)} ms")
+                    with pc2:
+                        st.metric("Reported Model", pr.get("reported_model", mid)[:20] + ("..." if len(pr.get("reported_model", mid)) > 20 else ""))
+                    with pc3:
+                        status = "🔴 MISMATCH" if pr.get("model_mismatch") else "✅ MATCH"
+                        st.metric("Model ID", status)
+
+                    # Warnings
+                    if pr.get("model_mismatch"):
+                        st.error(f"🚨 **CRITICAL**: Model ID mismatch! Requested `{mid}` but server returned `{pr['reported_model']}`")
+                    
+                    if pr.get("self_identified"):
+                        st.info(f"💬 Model identified as: **{pr['self_identified']}**")
+                    
+                    # Rate limit analysis
+                    headers = pr.get("headers", {})
+                    if headers.get("x-ratelimit-limit") != "—":
+                        st.success("✅ Legitimate rate limit headers detected")
+                    else:
+                        st.warning("⚠️ No rate limit headers — possible minimal proxy wrapper")
+                else:
+                    st.error(f"Probe gagal: {pr.get('error','Unknown error')}")
+
+    # ── Raw JSON View ──────────────────────────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("📄 Raw JSON Response"):
+        st.json(st.session_state.models_data)
+
+    # ── Export Summary ─────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📥 Export Hasil Analisis")
+
+    summary_rows = []
+    for m in models:
+        mid      = m.get("id", "")
+        owned_by = m.get("owned_by", "")
+        provider, _ = detect_provider(mid)
+        proxied  = is_likely_proxied(mid, owned_by)
+        probe    = st.session_state.probe_results.get(mid, {})
+        analysis = build_analysis(mid, owned_by, probe if probe.get("ok") else None)
+        
+        summary_rows.append({
+            "model_id":  mid,
+            "owned_by":  owned_by,
+            "provider":  provider,
+            "verdict":   analysis["verdict"],
+            "confidence": analysis["confidence"],
+            "cracked_score": analysis.get("cracked_score", 0),
+            "proxy_hint": proxied,
+            "probed":    bool(probe.get("ok")),
+            "latency_ms": probe.get("avg_latency_ms", "—") if probe.get("ok") else "—",
+            "reported_model": probe.get("reported_model", "—") if probe.get("ok") else "—",
+            "model_id_mismatch": probe.get("model_mismatch", False) if probe.get("ok") else "—",
+            "self_identified": probe.get("self_identified", "—") if probe.get("ok") else "—",
+        })
+
+    export_json = json.dumps(summary_rows, indent=2, ensure_ascii=False)
+    st.download_button(
+        label="⬇️ Download JSON Ringkasan",
+        data=export_json,
+        file_name=f"ai_model_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        mime="application/json",
+    )
+
+    # Show as table
+    if st.checkbox("Tampilkan tabel ringkasan"):
+        import pandas as pd
+        df = pd.DataFrame(summary_rows)
+        st.dataframe(df, use_container_width=True)
